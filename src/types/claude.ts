@@ -36,17 +36,3 @@ export interface ClaudeMessagesRequest {
   thinking?: { type: "enabled" | "disabled"; budget_tokens?: number };
   metadata?: { user_id?: string };
 }
-
-export interface ClaudeMessagesResponse {
-  id: string;
-  type: "message";
-  role: "assistant";
-  content: ClaudeContentBlock[];
-  model: string;
-  stop_reason: "end_turn" | "max_tokens" | "stop_sequence" | "tool_use" | null;
-  stop_sequence: string | null;
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-  };
-}

@@ -16,6 +16,10 @@ import {
 } from "../streaming/ollama-ndjson.js";
 import { toOllamaTags, findModel, getModelRegistry } from "../state/models.js";
 
+function ollamaError(reply: import("fastify").FastifyReply, status: number, message: string) {
+  return reply.status(status).send({ error: message });
+}
+
 export async function ollamaRoutes(app: FastifyInstance) {
   // Chat endpoint
   app.post("/ollama/api/chat", chatHandler);
@@ -24,83 +28,105 @@ export async function ollamaRoutes(app: FastifyInstance) {
 
   async function chatHandler(request: import("fastify").FastifyRequest, reply: import("fastify").FastifyReply) {
     const body = request.body as OllamaChatRequest;
-    const shouldStream = body.stream !== false; // Ollama defaults to streaming
-    const params = ollamaChatToProxyParams(body);
 
-    if (shouldStream) {
-      const stream = proxyStream(params);
-      await streamOllamaChat(stream, reply, body.model);
-      return;
+    if (!body.messages?.length) {
+      return ollamaError(reply, 400, "messages is required and must be non-empty");
     }
 
-    const message = await proxySync(params);
-    const startTime = Date.now();
+    try {
+      const shouldStream = body.stream !== false; // Ollama defaults to streaming
+      const params = ollamaChatToProxyParams(body);
 
-    let content = "";
-    let thinking = "";
-    for (const block of message.content) {
-      if (block.type === "text") content += block.text;
-      else if (block.type === "thinking") thinking += (block as { type: string; thinking: string }).thinking;
+      if (shouldStream) {
+        const stream = proxyStream(params);
+        await streamOllamaChat(stream, reply, body.model);
+        return;
+      }
+
+      const startTime = Date.now();
+      const message = await proxySync(params);
+
+      let content = "";
+      let thinking = "";
+      for (const block of message.content) {
+        if (block.type === "text") content += block.text;
+        else if (block.type === "thinking") thinking += (block as { type: string; thinking: string }).thinking;
+      }
+
+      const totalDuration = (Date.now() - startTime) * 1e6;
+      const response: OllamaChatResponse = {
+        model: body.model,
+        created_at: new Date().toISOString(),
+        message: {
+          role: "assistant",
+          content,
+        },
+        done: true,
+        done_reason: "stop",
+        total_duration: totalDuration,
+        load_duration: 0,
+        prompt_eval_count: message.usage.input_tokens,
+        prompt_eval_duration: 0,
+        eval_count: message.usage.output_tokens,
+        eval_duration: totalDuration,
+      };
+
+      if (thinking) response.message.thinking = thinking;
+
+      return response;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Internal server error";
+      const status = (err as { status?: number }).status ?? 500;
+      return ollamaError(reply, status, message);
     }
-
-    const totalDuration = (Date.now() - startTime) * 1e6;
-    const response: OllamaChatResponse = {
-      model: body.model,
-      created_at: new Date().toISOString(),
-      message: {
-        role: "assistant",
-        content,
-      },
-      done: true,
-      done_reason: "stop",
-      total_duration: totalDuration,
-      load_duration: 0,
-      prompt_eval_count: message.usage.input_tokens,
-      prompt_eval_duration: 0,
-      eval_count: message.usage.output_tokens,
-      eval_duration: totalDuration,
-    };
-
-    if (thinking) response.message.thinking = thinking;
-
-    return response;
   }
 
   // Generate endpoint
   app.post("/ollama/api/generate", async (request, reply) => {
     const body = request.body as OllamaGenerateRequest;
-    const shouldStream = body.stream !== false;
-    const params = ollamaGenerateToProxyParams(body);
 
-    if (shouldStream) {
-      const stream = proxyStream(params);
-      await streamOllamaGenerate(stream, reply, body.model);
-      return;
+    if (!body.prompt) {
+      return ollamaError(reply, 400, "prompt is required");
     }
 
-    const message = await proxySync(params);
-    const startTime = Date.now();
+    try {
+      const shouldStream = body.stream !== false;
+      const params = ollamaGenerateToProxyParams(body);
 
-    let content = "";
-    for (const block of message.content) {
-      if (block.type === "text") content += block.text;
+      if (shouldStream) {
+        const stream = proxyStream(params);
+        await streamOllamaGenerate(stream, reply, body.model);
+        return;
+      }
+
+      const startTime = Date.now();
+      const message = await proxySync(params);
+
+      let content = "";
+      for (const block of message.content) {
+        if (block.type === "text") content += block.text;
+      }
+
+      const totalDuration = (Date.now() - startTime) * 1e6;
+      const response: OllamaGenerateResponse = {
+        model: body.model,
+        created_at: new Date().toISOString(),
+        response: content,
+        done: true,
+        done_reason: "stop",
+        total_duration: totalDuration,
+        load_duration: 0,
+        prompt_eval_count: message.usage.input_tokens,
+        eval_count: message.usage.output_tokens,
+        eval_duration: totalDuration,
+      };
+
+      return response;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Internal server error";
+      const status = (err as { status?: number }).status ?? 500;
+      return ollamaError(reply, status, message);
     }
-
-    const totalDuration = (Date.now() - startTime) * 1e6;
-    const response: OllamaGenerateResponse = {
-      model: body.model,
-      created_at: new Date().toISOString(),
-      response: content,
-      done: true,
-      done_reason: "stop",
-      total_duration: totalDuration,
-      load_duration: 0,
-      prompt_eval_count: message.usage.input_tokens,
-      eval_count: message.usage.output_tokens,
-      eval_duration: totalDuration,
-    };
-
-    return response;
   });
 
   // Tags (list models)

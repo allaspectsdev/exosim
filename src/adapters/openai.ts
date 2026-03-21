@@ -99,8 +99,10 @@ export function openaiToProxyParams(req: ChatCompletionRequest): ProxyParams {
   if (req.tool_choice) {
     if (typeof req.tool_choice === "string") {
       if (req.tool_choice === "auto") params.toolChoice = { type: "auto" };
-      else if (req.tool_choice === "none") params.toolChoice = { type: "any" };
-      else if (req.tool_choice === "required") params.toolChoice = { type: "any" };
+      else if (req.tool_choice === "none") {
+        // "none" means don't call tools — omit tools entirely
+        delete params.tools;
+      } else if (req.tool_choice === "required") params.toolChoice = { type: "any" };
     } else if (req.tool_choice.function?.name) {
       params.toolChoice = { type: "tool", name: req.tool_choice.function.name };
     }

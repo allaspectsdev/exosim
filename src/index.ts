@@ -1,7 +1,7 @@
 import { config } from "./config.js";
 import { buildServer } from "./server.js";
 import { clusterState } from "./state/cluster.js";
-import { startMdnsAdvertiser } from "./mdns/advertiser.js";
+import { startMdnsAdvertiser, stopMdnsAdvertiser } from "./mdns/advertiser.js";
 
 async function main() {
   const app = await buildServer();
@@ -23,6 +23,16 @@ async function main() {
 
   await app.listen({ port: config.PORT, host: "0.0.0.0" });
   await startMdnsAdvertiser();
+
+  const shutdown = async () => {
+    console.log("\nShutting down ExoSim...");
+    stopMdnsAdvertiser();
+    await app.close();
+    process.exit(0);
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
 main().catch((err) => {

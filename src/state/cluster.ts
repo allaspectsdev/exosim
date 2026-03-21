@@ -130,7 +130,9 @@ class ClusterStateManager {
   }
 
   getMasterNodeId(): string {
-    return this.nodes.find((n) => n.isMaster)!.nodeId;
+    const master = this.nodes.find((n) => n.isMaster);
+    if (!master) throw new Error("No master node in cluster");
+    return master.nodeId;
   }
 
   getTopology(): Topology {

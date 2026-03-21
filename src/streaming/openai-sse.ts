@@ -3,6 +3,12 @@ import type { FastifyReply } from "fastify";
 import type { ChatCompletionChunk } from "../types/openai.js";
 import { v4 as uuidv4 } from "uuid";
 
+function write(reply: FastifyReply, data: string): boolean {
+  if (reply.raw.destroyed) return false;
+  reply.raw.write(data);
+  return true;
+}
+
 export async function streamOpenAISSE(
   stream: MessageStream,
   reply: FastifyReply,
@@ -31,126 +37,143 @@ export async function streamOpenAISSE(
       },
     ],
   };
-  reply.raw.write(`data: ${JSON.stringify(initialChunk)}\n\n`);
+  write(reply, `data: ${JSON.stringify(initialChunk)}\n\n`);
 
   let finishReason: string | null = null;
   let currentToolCallIndex = -1;
+  let currentToolCallId = "";
 
-  for await (const event of stream) {
-    if (event.type === "content_block_start") {
-      if (event.content_block.type === "tool_use") {
-        currentToolCallIndex++;
-        const chunk: ChatCompletionChunk = {
-          id,
-          object: "chat.completion.chunk",
-          created,
-          model: requestedModel,
-          choices: [
-            {
-              index: 0,
-              delta: {
-                tool_calls: [
-                  {
-                    id: event.content_block.id,
-                    type: "function",
-                    function: {
-                      name: event.content_block.name,
-                      arguments: "",
+  try {
+    for await (const event of stream) {
+      if (reply.raw.destroyed) break;
+
+      if (event.type === "content_block_start") {
+        if (event.content_block.type === "tool_use") {
+          currentToolCallIndex++;
+          currentToolCallId = event.content_block.id;
+          const chunk: ChatCompletionChunk = {
+            id,
+            object: "chat.completion.chunk",
+            created,
+            model: requestedModel,
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  tool_calls: [
+                    {
+                      id: event.content_block.id,
+                      type: "function",
+                      function: {
+                        name: event.content_block.name,
+                        arguments: "",
+                      },
                     },
-                  },
-                ],
+                  ],
+                },
+                finish_reason: null,
               },
-              finish_reason: null,
-            },
-          ],
-        };
-        reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
-    } else if (event.type === "content_block_delta") {
-      if (event.delta.type === "text_delta") {
-        const chunk: ChatCompletionChunk = {
-          id,
-          object: "chat.completion.chunk",
-          created,
-          model: requestedModel,
-          choices: [
-            {
-              index: 0,
-              delta: { content: event.delta.text },
-              finish_reason: null,
-            },
-          ],
-        };
-        reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      } else if (event.delta.type === "thinking_delta") {
-        const chunk: ChatCompletionChunk = {
-          id,
-          object: "chat.completion.chunk",
-          created,
-          model: requestedModel,
-          choices: [
-            {
-              index: 0,
-              delta: { reasoning_content: (event.delta as { type: string; thinking: string }).thinking },
-              finish_reason: null,
-            },
-          ],
-        };
-        reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      } else if (event.delta.type === "input_json_delta") {
-        const chunk: ChatCompletionChunk = {
-          id,
-          object: "chat.completion.chunk",
-          created,
-          model: requestedModel,
-          choices: [
-            {
-              index: 0,
-              delta: {
-                tool_calls: [
-                  {
-                    id: undefined as unknown as string,
-                    type: "function",
-                    function: {
-                      name: "",
-                      arguments: (event.delta as { type: string; partial_json: string }).partial_json,
+            ],
+          };
+          write(reply, `data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      } else if (event.type === "content_block_delta") {
+        if (event.delta.type === "text_delta") {
+          const chunk: ChatCompletionChunk = {
+            id,
+            object: "chat.completion.chunk",
+            created,
+            model: requestedModel,
+            choices: [
+              {
+                index: 0,
+                delta: { content: event.delta.text },
+                finish_reason: null,
+              },
+            ],
+          };
+          write(reply, `data: ${JSON.stringify(chunk)}\n\n`);
+        } else if (event.delta.type === "thinking_delta") {
+          const chunk: ChatCompletionChunk = {
+            id,
+            object: "chat.completion.chunk",
+            created,
+            model: requestedModel,
+            choices: [
+              {
+                index: 0,
+                delta: { reasoning_content: (event.delta as { type: string; thinking: string }).thinking },
+                finish_reason: null,
+              },
+            ],
+          };
+          write(reply, `data: ${JSON.stringify(chunk)}\n\n`);
+        } else if (event.delta.type === "input_json_delta") {
+          const chunk: ChatCompletionChunk = {
+            id,
+            object: "chat.completion.chunk",
+            created,
+            model: requestedModel,
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  tool_calls: [
+                    {
+                      id: currentToolCallId,
+                      type: "function",
+                      function: {
+                        name: "",
+                        arguments: (event.delta as { type: string; partial_json: string }).partial_json,
+                      },
                     },
-                  },
-                ],
+                  ],
+                },
+                finish_reason: null,
               },
-              finish_reason: null,
-            },
-          ],
-        };
-        reply.raw.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
-    } else if (event.type === "message_delta") {
-      const stopReason = (event as { type: string; delta: { stop_reason?: string } }).delta.stop_reason;
-      if (stopReason === "tool_use") {
-        finishReason = "tool_calls";
-      } else if (stopReason === "max_tokens") {
-        finishReason = "length";
-      } else {
-        finishReason = "stop";
+            ],
+          };
+          write(reply, `data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      } else if (event.type === "message_delta") {
+        const stopReason = (event as { type: string; delta: { stop_reason?: string } }).delta.stop_reason;
+        if (stopReason === "tool_use") {
+          finishReason = "tool_calls";
+        } else if (stopReason === "max_tokens") {
+          finishReason = "length";
+        } else {
+          finishReason = "stop";
+        }
       }
     }
-  }
 
-  // Final chunk with finish_reason
-  const finalChunk: ChatCompletionChunk = {
-    id,
-    object: "chat.completion.chunk",
-    created,
-    model: requestedModel,
-    choices: [
-      {
-        index: 0,
-        delta: {},
-        finish_reason: finishReason ?? "stop",
-      },
-    ],
-  };
-  reply.raw.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
-  reply.raw.write("data: [DONE]\n\n");
-  reply.raw.end();
+    // Final chunk with finish_reason
+    if (!reply.raw.destroyed) {
+      const finalChunk: ChatCompletionChunk = {
+        id,
+        object: "chat.completion.chunk",
+        created,
+        model: requestedModel,
+        choices: [
+          {
+            index: 0,
+            delta: {},
+            finish_reason: finishReason ?? "stop",
+          },
+        ],
+      };
+      write(reply, `data: ${JSON.stringify(finalChunk)}\n\n`);
+      write(reply, "data: [DONE]\n\n");
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Internal server error";
+    if (!reply.raw.destroyed) {
+      write(reply, `data: ${JSON.stringify({ error: { message, type: "api_error", code: "proxy_error" } })}\n\n`);
+      write(reply, "data: [DONE]\n\n");
+    }
+  } finally {
+    if (!reply.raw.destroyed) {
+      reply.raw.end();
+    }
+  }
 }

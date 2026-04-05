@@ -64,7 +64,7 @@ export function toOllamaTags(): OllamaModelTag[] {
   }));
 }
 
-function parseSize(s: string): number {
+export function parseSize(s: string): number {
   const num = parseFloat(s);
   return isNaN(num) ? 1 : num;
 }

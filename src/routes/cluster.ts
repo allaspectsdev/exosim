@@ -49,34 +49,14 @@ export async function clusterRoutes(app: FastifyInstance) {
     });
   });
 
-  // Instance management — real Exo nests model_id inside an `instance` object
+  // Instance management — static routes must precede parametric :instanceId
   app.post("/instance", async (request) => {
     const body = request.body as { instance?: { model_id?: string }; model_id?: string };
     const modelId = body.instance?.model_id ?? body.model_id ?? "llama-3.3-70b";
     return clusterState.createInstance(modelId);
   });
 
-  app.get("/instance/:instanceId", async (request, reply) => {
-    const { instanceId } = request.params as { instanceId: string };
-    const instance = clusterState.getInstance(instanceId);
-    if (!instance) {
-      reply.status(404).send({ error: "Instance not found" });
-      return;
-    }
-    return instance;
-  });
-
-  app.delete("/instance/:instanceId", async (request, reply) => {
-    const { instanceId } = request.params as { instanceId: string };
-    const deleted = clusterState.deleteInstance(instanceId);
-    if (!deleted) {
-      reply.status(404).send({ error: "Instance not found" });
-      return;
-    }
-    return { deleted: true };
-  });
-
-  // Instance placement preview
+  // Instance placement preview (static — registered before :instanceId)
   app.get("/instance/placement", async (request) => {
     const { model_id } = request.query as { model_id?: string };
     const nodes = clusterState.getNodes();
@@ -104,6 +84,27 @@ export async function clusterRoutes(app: FastifyInstance) {
         },
       ],
     };
+  });
+
+  // Parametric routes after static ones
+  app.get("/instance/:instanceId", async (request, reply) => {
+    const { instanceId } = request.params as { instanceId: string };
+    const instance = clusterState.getInstance(instanceId);
+    if (!instance) {
+      reply.status(404).send({ error: "Instance not found" });
+      return;
+    }
+    return instance;
+  });
+
+  app.delete("/instance/:instanceId", async (request, reply) => {
+    const { instanceId } = request.params as { instanceId: string };
+    const deleted = clusterState.deleteInstance(instanceId);
+    if (!deleted) {
+      reply.status(404).send({ error: "Instance not found" });
+      return;
+    }
+    return { deleted: true };
   });
 
   // Traces (simulated)

@@ -14,8 +14,17 @@ export function ollamaChatToProxyParams(req: OllamaChatRequest): ProxyParams {
     }
 
     if (msg.role === "tool") {
-      // Map tool results to user messages
-      messages.push({ role: "user", content: msg.content });
+      // Tool results must be wrapped in tool_result content blocks for Claude
+      messages.push({
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "",
+            content: msg.content,
+          },
+        ],
+      });
       continue;
     }
 

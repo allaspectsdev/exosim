@@ -33,12 +33,14 @@ export async function streamResponsesSSE(
   let outputText = "";
   let promptTokens = 0;
   let completionTokens = 0;
+  let messageItemEmitted = false;
 
-  const output: ResponseOutputItem[] = [];
   const toolCalls: ResponseOutputItem[] = [];
   let currentToolCallId = "";
   let currentToolCallName = "";
   let currentToolCallArgs = "";
+
+  let outputIndex = -1;
 
   // response.created
   const baseResponse: ResponseObject = {
@@ -60,28 +62,30 @@ export async function streamResponsesSSE(
   emit(reply, "response.created", baseResponse);
   emit(reply, "response.in_progress", baseResponse);
 
-  // Emit output_item.added for the message
-  const messageItem: ResponseOutputItem = {
-    id: messageItemId,
-    type: "message",
-    role: "assistant",
-    content: [],
-  };
-  emit(reply, "response.output_item.added", {
-    output_index: 0,
-    item: messageItem,
-  });
+  function ensureMessageItemEmitted(): void {
+    if (messageItemEmitted) return;
+    messageItemEmitted = true;
+    outputIndex++;
 
-  // Emit content_part.added
-  const contentPart: ResponseOutputContentPart = { type: "output_text", text: "" };
-  emit(reply, "response.content_part.added", {
-    item_id: messageItemId,
-    output_index: 0,
-    content_index: 0,
-    part: contentPart,
-  });
+    const messageItem: ResponseOutputItem = {
+      id: messageItemId,
+      type: "message",
+      role: "assistant",
+      content: [],
+    };
+    emit(reply, "response.output_item.added", {
+      output_index: outputIndex,
+      item: messageItem,
+    });
 
-  let outputIndex = 0;
+    const contentPart: ResponseOutputContentPart = { type: "output_text", text: "" };
+    emit(reply, "response.content_part.added", {
+      item_id: messageItemId,
+      output_index: outputIndex,
+      content_index: 0,
+      part: contentPart,
+    });
+  }
 
   try {
     for await (const event of stream) {
@@ -94,7 +98,6 @@ export async function streamResponsesSSE(
         }
       } else if (event.type === "content_block_start") {
         if (event.content_block.type === "tool_use") {
-          // Finish the text content part if we have text
           outputIndex++;
           currentToolCallId = event.content_block.id;
           currentToolCallName = event.content_block.name;
@@ -114,6 +117,8 @@ export async function streamResponsesSSE(
         }
       } else if (event.type === "content_block_delta") {
         if (event.delta.type === "text_delta") {
+          // Only emit message item when we first see text
+          ensureMessageItemEmitted();
           outputText += event.delta.text;
           emit(reply, "response.output_text.delta", {
             item_id: messageItemId,
@@ -131,8 +136,8 @@ export async function streamResponsesSSE(
           });
         }
       } else if (event.type === "content_block_stop") {
-        // If we were building a tool call, finalize it
-        if (currentToolCallName && currentToolCallArgs !== undefined) {
+        // Only finalize if we were actually building a tool call
+        if (currentToolCallId) {
           const toolItem: ResponseOutputItem = {
             id: `fc_${uuidv4()}`,
             type: "function_call",
@@ -151,6 +156,7 @@ export async function streamResponsesSSE(
             item: toolItem,
           });
           toolCalls.push(toolItem);
+          currentToolCallId = "";
           currentToolCallName = "";
           currentToolCallArgs = "";
         }
@@ -162,38 +168,42 @@ export async function streamResponsesSSE(
       }
     }
 
-    // Finalize text content part
+    // Finalize
     if (!reply.raw.destroyed) {
-      emit(reply, "response.output_text.done", {
-        item_id: messageItemId,
-        output_index: 0,
-        content_index: 0,
-        text: outputText,
-      });
+      const output: ResponseOutputItem[] = [];
 
-      emit(reply, "response.content_part.done", {
-        item_id: messageItemId,
-        output_index: 0,
-        content_index: 0,
-        part: { type: "output_text", text: outputText },
-      });
+      // Only emit text finalization if we had text content
+      if (messageItemEmitted) {
+        emit(reply, "response.output_text.done", {
+          item_id: messageItemId,
+          output_index: 0,
+          content_index: 0,
+          text: outputText,
+        });
 
-      // Finalize message item
-      const finalMessageItem: ResponseOutputItem = {
-        id: messageItemId,
-        type: "message",
-        role: "assistant",
-        content: [{ type: "output_text", text: outputText }],
-      };
-      emit(reply, "response.output_item.done", {
-        output_index: 0,
-        item: finalMessageItem,
-      });
+        emit(reply, "response.content_part.done", {
+          item_id: messageItemId,
+          output_index: 0,
+          content_index: 0,
+          part: { type: "output_text", text: outputText },
+        });
 
-      // Build final output array
-      output.push(finalMessageItem, ...toolCalls);
+        const finalMessageItem: ResponseOutputItem = {
+          id: messageItemId,
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: outputText }],
+        };
+        emit(reply, "response.output_item.done", {
+          output_index: 0,
+          item: finalMessageItem,
+        });
 
-      // response.completed
+        output.push(finalMessageItem);
+      }
+
+      output.push(...toolCalls);
+
       const completedResponse: ResponseObject = {
         ...baseResponse,
         status: "completed",

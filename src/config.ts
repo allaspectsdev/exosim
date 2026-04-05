@@ -18,4 +18,6 @@ export const config = {
   ENABLE_MDNS: process.env.ENABLE_MDNS === "true",
   DEFAULT_MAX_TOKENS: parseInt(process.env.DEFAULT_MAX_TOKENS ?? "4096", 10),
   LOG_LEVEL: process.env.LOG_LEVEL ?? "info",
+  CORS_ORIGIN: process.env.CORS_ORIGIN ?? "*",
+  RATE_LIMIT_MAX: parseInt(process.env.RATE_LIMIT_MAX ?? "0", 10), // 0 = disabled
 } as const;

@@ -41,7 +41,7 @@ describe("ollamaChatToProxyParams", () => {
     expect(params.system).toBe("Rule 1\n\nRule 2");
   });
 
-  it("maps tool messages to user messages", () => {
+  it("maps tool messages to user messages with tool_result block", () => {
     const req: OllamaChatRequest = {
       model: "test",
       messages: [
@@ -51,7 +51,12 @@ describe("ollamaChatToProxyParams", () => {
     };
 
     const params = ollamaChatToProxyParams(req);
-    expect(params.messages[1]).toEqual({ role: "user", content: "tool result" });
+    expect(params.messages[1]).toEqual({
+      role: "user",
+      content: [
+        { type: "tool_result", tool_use_id: "", content: "tool result" },
+      ],
+    });
   });
 
   it("maps options to proxy params", () => {

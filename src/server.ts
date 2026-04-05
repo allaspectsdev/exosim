@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
 import { config } from "./config.js";
 import { openaiRoutes } from "./routes/openai.js";
 import { claudeRoutes } from "./routes/claude.js";
@@ -16,7 +17,19 @@ export async function buildServer() {
     bodyLimit: 8 * 1024 * 1024, // 8 MB — accommodates large base64 images in requests
   });
 
-  await app.register(cors, { origin: true });
+  // Raise keepAliveTimeout to match proxySync's 120s timeout
+  app.server.keepAliveTimeout = 130_000;
+
+  const corsOrigin = config.CORS_ORIGIN === "*" ? true : config.CORS_ORIGIN.split(",");
+  await app.register(cors, { origin: corsOrigin });
+
+  // Rate limiting — only enabled when RATE_LIMIT_MAX > 0
+  if (config.RATE_LIMIT_MAX > 0) {
+    await app.register(rateLimit, {
+      max: config.RATE_LIMIT_MAX,
+      timeWindow: "1 minute",
+    });
+  }
 
   // API routes
   await app.register(openaiRoutes);

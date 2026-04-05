@@ -68,11 +68,13 @@ function generateNodes(count: number): SimulatedNode[] {
     });
   }
 
-  // Build ring topology
-  for (let i = 0; i < count; i++) {
-    const next = (i + 1) % count;
-    nodes[i].connectedTo.push(nodes[next].nodeId);
-    nodes[next].connectedTo.push(nodes[i].nodeId);
+  // Build ring topology (skip for single node to avoid self-loop)
+  if (count > 1) {
+    for (let i = 0; i < count; i++) {
+      const next = (i + 1) % count;
+      nodes[i].connectedTo.push(nodes[next].nodeId);
+      nodes[next].connectedTo.push(nodes[i].nodeId);
+    }
   }
 
   // Add a random extra edge for realism

@@ -14,7 +14,7 @@ import {
   streamOllamaChat,
   streamOllamaGenerate,
 } from "../streaming/ollama-ndjson.js";
-import { toOllamaTags, findModel, getModelRegistry } from "../state/models.js";
+import { toOllamaTags, findModel, getModelRegistry, parseSize } from "../state/models.js";
 
 function ollamaError(reply: import("fastify").FastifyReply, status: number, message: string) {
   return reply.status(status).send({ error: message });
@@ -161,7 +161,7 @@ export async function ollamaRoutes(app: FastifyInstance) {
       },
       model_info: {
         "general.architecture": info.family,
-        "general.parameter_count": parseInt(info.parameterSize) * 1e9 || 1e9,
+        "general.parameter_count": parseSize(info.parameterSize) * 1e9,
         "general.context_length": info.contextLength,
       },
     };

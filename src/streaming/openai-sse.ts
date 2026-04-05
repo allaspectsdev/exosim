@@ -17,6 +17,7 @@ export async function streamOpenAISSE(
   const id = `chatcmpl-${uuidv4()}`;
   const created = Math.floor(Date.now() / 1000);
 
+  reply.hijack();
   reply.raw.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
@@ -62,6 +63,7 @@ export async function streamOpenAISSE(
                 delta: {
                   tool_calls: [
                     {
+                      index: currentToolCallIndex,
                       id: event.content_block.id,
                       type: "function",
                       function: {
@@ -120,10 +122,8 @@ export async function streamOpenAISSE(
                 delta: {
                   tool_calls: [
                     {
-                      id: currentToolCallId,
-                      type: "function",
+                      index: currentToolCallIndex,
                       function: {
-                        name: "",
                         arguments: (event.delta as { type: string; partial_json: string }).partial_json,
                       },
                     },

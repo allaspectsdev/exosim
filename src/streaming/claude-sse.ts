@@ -11,6 +11,7 @@ export async function streamClaudeSSE(
   stream: MessageStream,
   reply: FastifyReply
 ): Promise<void> {
+  reply.hijack();
   reply.raw.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",

@@ -13,6 +13,7 @@ export async function streamOllamaChat(
   reply: FastifyReply,
   requestedModel: string
 ): Promise<void> {
+  reply.hijack();
   reply.raw.writeHead(200, {
     "Content-Type": "application/x-ndjson",
     "Cache-Control": "no-cache",
@@ -83,6 +84,7 @@ export async function streamOllamaGenerate(
   reply: FastifyReply,
   requestedModel: string
 ): Promise<void> {
+  reply.hijack();
   reply.raw.writeHead(200, {
     "Content-Type": "application/x-ndjson",
     "Cache-Control": "no-cache",

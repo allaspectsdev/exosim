@@ -2,8 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { clusterState } from "../state/cluster.js";
 
 export async function clusterRoutes(app: FastifyInstance) {
-  // Node ID
-  app.get("/node_id", async () => clusterState.getMasterNodeId());
+  // Node ID — real Exo returns plain text UUID
+  app.get("/node_id", async (_request, reply) => {
+    reply.type("text/plain").send(clusterState.getMasterNodeId());
+  });
 
   // Full cluster state
   app.get("/state", async () => clusterState.getState());
@@ -14,6 +16,7 @@ export async function clusterRoutes(app: FastifyInstance) {
 
   // Events SSE stream
   app.get("/events", async (_request, reply) => {
+    reply.hijack();
     reply.raw.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",

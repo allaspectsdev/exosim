@@ -21,10 +21,10 @@ function ollamaError(reply: import("fastify").FastifyReply, status: number, mess
 }
 
 export async function ollamaRoutes(app: FastifyInstance) {
-  // Chat endpoint
-  app.post("/ollama/api/chat", chatHandler);
-  // Some clients use double /api
-  app.post("/ollama/api/api/chat", chatHandler);
+  // Chat endpoint — real Exo serves Ollama at /api/*
+  app.post("/api/chat", chatHandler);
+  // Some exo clients also try /api/api/chat
+  app.post("/api/api/chat", chatHandler);
 
   async function chatHandler(request: import("fastify").FastifyRequest, reply: import("fastify").FastifyReply) {
     const body = request.body as OllamaChatRequest;
@@ -82,7 +82,7 @@ export async function ollamaRoutes(app: FastifyInstance) {
   }
 
   // Generate endpoint
-  app.post("/ollama/api/generate", async (request, reply) => {
+  app.post("/api/generate", async (request, reply) => {
     const body = request.body as OllamaGenerateRequest;
 
     if (!body.prompt) {
@@ -130,12 +130,12 @@ export async function ollamaRoutes(app: FastifyInstance) {
   });
 
   // Tags (list models)
-  app.get("/ollama/api/tags", async () => ({
+  app.get("/api/tags", async () => ({
     models: toOllamaTags(),
   }));
 
   // PS (running models)
-  app.get("/ollama/api/ps", async () => ({
+  app.get("/api/ps", async () => ({
     models: toOllamaTags().slice(0, 1).map((m) => ({
       ...m,
       expires_at: new Date(Date.now() + 300000).toISOString(),
@@ -144,7 +144,7 @@ export async function ollamaRoutes(app: FastifyInstance) {
   }));
 
   // Show model details
-  app.post("/ollama/api/show", async (request) => {
+  app.post("/api/show", async (request) => {
     const { model } = request.body as { model: string };
     const entry = findModel(model);
     const registry = getModelRegistry();
@@ -168,8 +168,34 @@ export async function ollamaRoutes(app: FastifyInstance) {
     };
   });
 
-  // Version
-  app.get("/ollama/api/version", async () => ({
-    version: "exosim-0.1.0",
+  // Version — return a plausible Ollama version so clients don't choke
+  app.get("/api/version", async () => ({
+    version: "0.6.2",
   }));
+
+  // Pull — stub for clients that probe this
+  app.post("/api/pull", async (_request, reply) => {
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      "Content-Type": "application/x-ndjson",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    reply.raw.write(JSON.stringify({ status: "success" }) + "\n");
+    reply.raw.end();
+  });
+
+  // Delete — stub
+  app.delete("/api/delete", async () => ({ status: "success" }));
+
+  // Copy — stub
+  app.post("/api/copy", async () => ({ status: "success" }));
+
+  // Embeddings — not supported
+  app.post("/api/embed", async (_request, reply) => {
+    reply.status(501).send({ error: "Embeddings not supported by ExoSim" });
+  });
+  app.post("/api/embeddings", async (_request, reply) => {
+    reply.status(501).send({ error: "Embeddings not supported by ExoSim" });
+  });
 }

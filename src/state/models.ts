@@ -30,9 +30,8 @@ export function getModelRegistry(): ModelEntry[] {
 }
 
 export function findModel(modelId: string): ModelEntry | undefined {
-  return MODEL_REGISTRY.find(
-    (m) => m.id === modelId || m.id === modelId.toLowerCase()
-  );
+  const needle = modelId.toLowerCase();
+  return MODEL_REGISTRY.find((m) => m.id.toLowerCase() === needle);
 }
 
 export function isKnownModel(modelId: string): boolean {

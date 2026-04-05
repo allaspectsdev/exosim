@@ -79,7 +79,12 @@ export interface ChatCompletionChunk {
     delta: {
       role?: "assistant";
       content?: string;
-      tool_calls?: Partial<ToolCall>[];
+      tool_calls?: {
+        index?: number;
+        id?: string;
+        type?: "function";
+        function?: { name?: string; arguments?: string };
+      }[];
       reasoning_content?: string;
     };
     finish_reason: string | null;

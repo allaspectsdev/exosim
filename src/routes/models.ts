@@ -15,10 +15,10 @@ export async function modelsRoutes(app: FastifyInstance) {
     data: toOpenAIModels(),
   }));
 
-  // Model search
+  // Model search — real Exo uses `query` param, not `q`
   app.get("/models/search", async (request) => {
-    const { q } = request.query as { q?: string };
-    if (!q) return { models: getModelRegistry() };
-    return { models: searchModels(q) };
+    const { query } = request.query as { query?: string };
+    if (!query) return { models: getModelRegistry() };
+    return { models: searchModels(query) };
   });
 }

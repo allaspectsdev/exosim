@@ -12,6 +12,7 @@ export async function buildServer() {
     logger: {
       level: config.LOG_LEVEL,
     },
+    bodyLimit: 8 * 1024 * 1024, // 8 MB — accommodates large base64 images in requests
   });
 
   await app.register(cors, { origin: true });

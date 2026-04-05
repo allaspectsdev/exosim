@@ -2,10 +2,10 @@ import type { FastifyInstance } from "fastify";
 import { clusterState } from "../state/cluster.js";
 
 export async function clusterRoutes(app: FastifyInstance) {
-  // Node ID — real Exo returns plain text UUID
-  app.get("/node_id", async (_request, reply) => {
-    reply.type("text/plain").send(clusterState.getMasterNodeId());
-  });
+  // Node ID — real Exo returns JSON object
+  app.get("/node_id", async () => ({
+    node_id: clusterState.getMasterNodeId(),
+  }));
 
   // Full cluster state
   app.get("/state", async () => clusterState.getState());
@@ -45,10 +45,11 @@ export async function clusterRoutes(app: FastifyInstance) {
     });
   });
 
-  // Instance management
+  // Instance management — real Exo nests model_id inside an `instance` object
   app.post("/instance", async (request) => {
-    const { model_id } = request.body as { model_id: string };
-    return clusterState.createInstance(model_id ?? "llama-3.3-70b");
+    const body = request.body as { instance?: { model_id?: string }; model_id?: string };
+    const modelId = body.instance?.model_id ?? body.model_id ?? "llama-3.3-70b";
+    return clusterState.createInstance(modelId);
   });
 
   app.get("/instance/:instanceId", async (request, reply) => {

@@ -41,10 +41,14 @@ export async function proxySync(
   params: ProxyParams
 ): Promise<Anthropic.Message> {
   const apiParams = buildParams(params);
-  return anthropic.messages.create(apiParams) as Promise<Anthropic.Message>;
+  return anthropic.messages.create(apiParams, {
+    timeout: 120_000,
+  }) as Promise<Anthropic.Message>;
 }
 
 export function proxyStream(params: ProxyParams): MessageStream {
   const apiParams = buildParams(params);
-  return anthropic.messages.stream(apiParams);
+  return anthropic.messages.stream(apiParams, {
+    timeout: 300_000,
+  });
 }

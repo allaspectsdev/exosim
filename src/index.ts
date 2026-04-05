@@ -26,6 +26,7 @@ async function main() {
 
   const shutdown = async () => {
     console.log("\nShutting down ExoSim...");
+    clusterState.stopDrift();
     stopMdnsAdvertiser();
     await app.close();
     process.exit(0);

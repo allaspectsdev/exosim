@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { openaiRoutes } from "./routes/openai.js";
 import { claudeRoutes } from "./routes/claude.js";
 import { ollamaRoutes } from "./routes/ollama.js";
+import { responsesRoutes } from "./routes/responses.js";
 import { modelsRoutes } from "./routes/models.js";
 import { clusterRoutes } from "./routes/cluster.js";
 
@@ -21,6 +22,7 @@ export async function buildServer() {
   await app.register(openaiRoutes);
   await app.register(claudeRoutes);
   await app.register(ollamaRoutes);
+  await app.register(responsesRoutes);
   await app.register(modelsRoutes);
   await app.register(clusterRoutes);
 

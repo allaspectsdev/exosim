@@ -21,6 +21,7 @@ export async function streamOllamaChat(
   });
 
   const startTime = Date.now();
+  let promptEvalCount = 0;
   let evalCount = 0;
   let thinkingContent = "";
 
@@ -28,9 +29,14 @@ export async function streamOllamaChat(
     for await (const event of stream) {
       if (reply.raw.destroyed) break;
 
-      if (event.type === "content_block_delta") {
+      if (event.type === "message_start") {
+        // Capture input token count from the initial message event
+        const msg = (event as { type: string; message: { usage?: { input_tokens?: number } } }).message;
+        if (msg.usage?.input_tokens) {
+          promptEvalCount = msg.usage.input_tokens;
+        }
+      } else if (event.type === "content_block_delta") {
         if (event.delta.type === "text_delta") {
-          evalCount++;
           const chunk: OllamaChatResponse = {
             model: requestedModel,
             created_at: new Date().toISOString(),
@@ -43,6 +49,12 @@ export async function streamOllamaChat(
           write(reply, JSON.stringify(chunk) + "\n");
         } else if (event.delta.type === "thinking_delta") {
           thinkingContent += (event.delta as { type: string; thinking: string }).thinking;
+        }
+      } else if (event.type === "message_delta") {
+        // Capture output token count from the final message delta
+        const delta = (event as { type: string; usage?: { output_tokens?: number } });
+        if (delta.usage?.output_tokens) {
+          evalCount = delta.usage.output_tokens;
         }
       }
     }
@@ -57,7 +69,7 @@ export async function streamOllamaChat(
         done_reason: "stop",
         total_duration: totalDuration,
         load_duration: 0,
-        prompt_eval_count: 0,
+        prompt_eval_count: promptEvalCount,
         prompt_eval_duration: 0,
         eval_count: evalCount,
         eval_duration: totalDuration,
@@ -92,17 +104,22 @@ export async function streamOllamaGenerate(
   });
 
   const startTime = Date.now();
+  let promptEvalCount = 0;
   let evalCount = 0;
 
   try {
     for await (const event of stream) {
       if (reply.raw.destroyed) break;
 
-      if (
+      if (event.type === "message_start") {
+        const msg = (event as { type: string; message: { usage?: { input_tokens?: number } } }).message;
+        if (msg.usage?.input_tokens) {
+          promptEvalCount = msg.usage.input_tokens;
+        }
+      } else if (
         event.type === "content_block_delta" &&
         event.delta.type === "text_delta"
       ) {
-        evalCount++;
         const chunk: OllamaGenerateResponse = {
           model: requestedModel,
           created_at: new Date().toISOString(),
@@ -110,6 +127,11 @@ export async function streamOllamaGenerate(
           done: false,
         };
         write(reply, JSON.stringify(chunk) + "\n");
+      } else if (event.type === "message_delta") {
+        const delta = (event as { type: string; usage?: { output_tokens?: number } });
+        if (delta.usage?.output_tokens) {
+          evalCount = delta.usage.output_tokens;
+        }
       }
     }
 
@@ -123,7 +145,7 @@ export async function streamOllamaGenerate(
         done_reason: "stop",
         total_duration: totalDuration,
         load_duration: 0,
-        prompt_eval_count: 0,
+        prompt_eval_count: promptEvalCount,
         eval_count: evalCount,
         eval_duration: totalDuration,
       };

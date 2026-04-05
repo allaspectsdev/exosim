@@ -5,8 +5,7 @@ dotenv.config();
 function requiredEnv(key: string): string {
   const value = process.env[key];
   if (!value) {
-    console.error(`Missing required environment variable: ${key}`);
-    process.exit(1);
+    throw new Error(`Missing required environment variable: ${key}`);
   }
   return value;
 }

@@ -1,4 +1,8 @@
 import type { FastifyInstance } from "fastify";
+import { v4 as uuidv4 } from "uuid";
+import type { ChatCompletionRequest } from "../types/openai.js";
+import { openaiToProxyParams } from "../adapters/openai.js";
+import { proxySync } from "../anthropic/proxy.js";
 import { clusterState } from "../state/cluster.js";
 
 export async function clusterRoutes(app: FastifyInstance) {
@@ -115,10 +119,90 @@ export async function clusterRoutes(app: FastifyInstance) {
   // Cancel (noop)
   app.post("/v1/cancel/:commandId", async () => ({ cancelled: true }));
 
-  // Bench
+  // Bench summary
   app.get("/bench/", async () => ({
     throughput_tokens_per_sec: 42.5,
     memory_usage_mb: 512,
     active_instances: clusterState.getInstances().length,
   }));
+
+  // Bench chat completions — like /v1/chat/completions but with perf metrics
+  app.post("/bench/chat/completions", async (request, reply) => {
+    const body = request.body as ChatCompletionRequest;
+
+    if (!body.messages?.length) {
+      return reply.status(400).send({
+        error: { message: "messages is required", type: "invalid_request_error" },
+      });
+    }
+
+    try {
+      const params = openaiToProxyParams(body);
+      const startTime = Date.now();
+      const message = await proxySync(params);
+      const elapsed = (Date.now() - startTime) / 1000;
+
+      let content: string | null = null;
+      for (const block of message.content) {
+        if (block.type === "text") {
+          content = (content ?? "") + block.text;
+        }
+      }
+
+      const promptTokens = message.usage.input_tokens;
+      const completionTokens = message.usage.output_tokens;
+      const promptTps = elapsed > 0 ? promptTokens / elapsed : 0;
+      const generationTps = elapsed > 0 ? completionTokens / elapsed : 0;
+
+      return {
+        id: `chatcmpl-${uuidv4()}`,
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: body.model,
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content },
+            finish_reason: message.stop_reason === "max_tokens" ? "length" : "stop",
+          },
+        ],
+        usage: {
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: promptTokens + completionTokens,
+        },
+        prompt_tps: parseFloat(promptTps.toFixed(1)),
+        generation_tps: parseFloat(generationTps.toFixed(1)),
+        prompt_tokens: promptTokens,
+        generation_tokens: completionTokens,
+        peak_memory_usage: 512 * 1024 * 1024, // simulated 512MB
+      };
+    } catch (err) {
+      const errMessage = err instanceof Error ? err.message : "Internal server error";
+      const status = (err as { status?: number }).status ?? 500;
+      return reply.status(status).send({ error: { message: errMessage, type: "api_error" } });
+    }
+  });
+
+  // Place instance — dry-run placement planning
+  app.post("/place_instance", async (request) => {
+    const body = request.body as { instance?: { model_id?: string }; model_id?: string };
+    const modelId = body.instance?.model_id ?? body.model_id ?? "llama-3.3-70b";
+    const nodes = clusterState.getNodes();
+    return {
+      model_id: modelId,
+      placement: {
+        strategy: "tensor_parallel",
+        nodes: nodes.map((n, i) => ({
+          node_id: n.nodeId,
+          node_name: n.name,
+          shard_index: i,
+          shard_total: nodes.length,
+          estimated_vram_usage_gb: n.gpu.vramGb * 0.7,
+        })),
+      },
+      estimated_throughput_tps: 42.5,
+      feasible: true,
+    };
+  });
 }

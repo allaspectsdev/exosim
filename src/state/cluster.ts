@@ -93,6 +93,12 @@ function generateNodes(count: number): SimulatedNode[] {
   return nodes;
 }
 
+function drift(current: number, min: number, max: number, maxStep: number): number {
+  const delta = (Math.random() - 0.5) * 2 * maxStep;
+  const next = current + delta;
+  return parseFloat(Math.max(min, Math.min(max, next)).toFixed(1));
+}
+
 function buildEdges(nodes: SimulatedNode[]): TopologyEdge[] {
   const edges: TopologyEdge[] = [];
   const seen = new Set<string>();
@@ -119,10 +125,45 @@ class ClusterStateManager {
   private edges: TopologyEdge[];
   private instances: Map<string, import("../types/cluster.js").Instance> =
     new Map();
+  private driftInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.nodes = generateNodes(config.SIMULATED_NODE_COUNT);
     this.edges = buildEdges(this.nodes);
+    this.startStatsDrift();
+  }
+
+  private startStatsDrift(): void {
+    // Drift stats every 10 seconds to simulate real hardware fluctuations
+    this.driftInterval = setInterval(() => {
+      const hasActiveWork = this.instances.size > 0;
+      for (const node of this.nodes) {
+        // CPU usage drifts within a band depending on activity
+        const cpuBase = hasActiveWork ? 25 : 5;
+        const cpuRange = hasActiveWork ? 40 : 15;
+        node.cpu.usagePercent = drift(node.cpu.usagePercent, cpuBase, cpuBase + cpuRange, 5);
+
+        // Memory usage drifts slowly
+        const memMin = node.memory.totalGb * 0.15;
+        const memMax = node.memory.totalGb * (hasActiveWork ? 0.7 : 0.45);
+        node.memory.usedGb = drift(node.memory.usedGb, memMin, memMax, 0.5);
+
+        // GPU usage spikes during inference
+        const gpuBase = hasActiveWork ? 30 : 0;
+        const gpuRange = hasActiveWork ? 60 : 10;
+        node.gpu.usagePercent = drift(node.gpu.usagePercent, gpuBase, gpuBase + gpuRange, 8);
+
+        // Update lastSeen
+        node.lastSeen = new Date().toISOString();
+      }
+    }, 10000);
+  }
+
+  stopDrift(): void {
+    if (this.driftInterval) {
+      clearInterval(this.driftInterval);
+      this.driftInterval = null;
+    }
   }
 
   getNodes(): SimulatedNode[] {
